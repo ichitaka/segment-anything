@@ -170,6 +170,10 @@ class Block(nn.Module):
         if self.window_size > 0:
             H, W = x.shape[1], x.shape[2]
             x, pad_hw = window_partition(x, self.window_size)
+        else:
+            # For torchscript compatibility
+            H, W = x.shape[1], x.shape[2]
+            pad_hw = (0, 0)
 
         x = self.attn(x)
         # Reverse window partition
@@ -240,6 +244,11 @@ class Attention(nn.Module):
         return x
 
 
+def modulo(a: int, b: int) -> int:
+    # TorchTensorRT has an issue with the modulo operation on integers. This is a workaround.
+    return int(a - b * torch.floor(torch.div(a, b)))
+
+
 def window_partition(x: torch.Tensor, window_size: int) -> Tuple[torch.Tensor, Tuple[int, int]]:
     """
     Partition into non-overlapping windows with padding if needed.
@@ -253,8 +262,9 @@ def window_partition(x: torch.Tensor, window_size: int) -> Tuple[torch.Tensor, T
     """
     B, H, W, C = x.shape
 
-    pad_h = (window_size - H % window_size) % window_size
-    pad_w = (window_size - W % window_size) % window_size
+    pad_h = modulo((window_size - modulo(H, window_size)), window_size)
+    pad_w = modulo((window_size - modulo(W, window_size)), window_size)
+
     if pad_h > 0 or pad_w > 0:
         x = F.pad(x, (0, 0, 0, pad_w, 0, pad_h))
     Hp, Wp = H + pad_h, W + pad_w
